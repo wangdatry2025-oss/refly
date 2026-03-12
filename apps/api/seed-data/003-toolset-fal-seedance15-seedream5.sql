@@ -1,21 +1,20 @@
--- Remove old fal tool methods
+-- Remove old fal tool methods (keep fal-image-to-video)
 DELETE FROM tool_methods WHERE "name" IN (
     'fal-voice-clone',
     'fal-text-to-podcast',
     'fal-text-to-speech',
     'flux_image_to_image',
-    'flux_text_to_image',
-    'fal-image-to-video'
+    'flux_text_to_image'
 );
 
 -- Remove old fal_audio toolset inventory and toolset (no longer needed)
 DELETE FROM toolsets WHERE "key" = 'fal_audio';
 DELETE FROM toolset_inventory WHERE "key" = 'fal_audio';
 
--- Update fal_video inventory: replace billing with only fal-text-to-video
+-- Update fal_video inventory: billing for both video tools
 UPDATE toolset_inventory
-SET credit_billing = '{"fal-text-to-video":20}',
-    description_dict = '{"en":"Generate videos with Seedance 1.5 model. Support text-to-video generation with high quality audio output.","zh-CN":"使用 Seedance 1.5 模型生成视频。支持文生视频，输出高质量带音频视频。"}'
+SET credit_billing = '{"fal-text-to-video":20,"fal-image-to-video":20}',
+    description_dict = '{"en":"Generate videos with Seedance models. Support text-to-video and image-to-video generation with high quality audio output.","zh-CN":"使用 Seedance 模型生成视频。支持文生视频和图生视频，输出高质量带音频视频。"}'
 WHERE "key" = 'fal_video' AND deleted_at IS NULL;
 
 -- Update fal_image inventory: replace billing with only seedream_text_to_image
@@ -40,3 +39,9 @@ UPDATE tool_methods
 SET endpoint = 'https://fal.run/fal-ai/bytedance/seedream/v5/lite/text-to-image',
     adapter_config = '{"headers":{"Authorization":"Key ${apiKey}","Content-Type":"application/json"},"timeout":120000}'
 WHERE inventory_key = 'fal_image' AND "name" = 'seedream_text_to_image' AND version_id = 1;
+
+-- Migrate fal-image-to-video to sync fal.run mode
+UPDATE tool_methods
+SET endpoint = 'https://fal.run/fal-ai/bytedance/seedance/v1/pro/fast/image-to-video',
+    adapter_config = '{"headers":{"Authorization":"Key ${apiKey}","Content-Type":"application/json"},"timeout":600000}'
+WHERE inventory_key = 'fal_video' AND "name" = 'fal-image-to-video' AND version_id = 1;
