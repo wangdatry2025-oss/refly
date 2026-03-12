@@ -47,6 +47,7 @@ import {
 } from '@refly/errors';
 import { ObjectStorageService, OSS_INTERNAL, OSS_EXTERNAL } from '../common/object-storage';
 import type { ObjectInfo } from '../common/object-storage/backend/interface';
+import axios from 'axios';
 import { streamToBuffer } from '../../utils';
 import { driveFilePO2DTO } from './drive.dto';
 import { isEmbeddableLinkFile } from './drive.utils';
@@ -1244,11 +1245,32 @@ export class DriveService implements OnModuleInit {
         return urls.filter(Boolean);
       }
 
-      // URL mode - generate signed URLs for private drive files
+      // URL mode - upload to image host for public access, fallback to presigned URLs
+      const imageHostBaseUrl = this.config.get<string>('imageHost.baseUrl');
+      const imageHostToken = this.config.get<string>('imageHost.token');
+
       return await Promise.all(
         files.map(async (file) => {
           const driveStorageKey = this.generateStorageKey(user, file);
 
+          // Try image host first for publicly accessible URLs
+          if (imageHostBaseUrl && imageHostToken) {
+            try {
+              const publicUrl = await this.uploadFileToImageHost(
+                driveStorageKey,
+                file,
+                imageHostBaseUrl,
+                imageHostToken,
+              );
+              if (publicUrl) return publicUrl;
+            } catch (error) {
+              this.logger.warn(
+                `Image host upload failed for ${file.fileId}, falling back to presigned URL: ${(error as Error).message}`,
+              );
+            }
+          }
+
+          // Fallback to MinIO presigned URL
           try {
             const expiry = Number(this.config.get<number>('drive.presignExpiry') ?? 3600);
             const signedUrl = await this.internalOss.presignedGetObject(driveStorageKey, expiry);
@@ -1265,6 +1287,54 @@ export class DriveService implements OnModuleInit {
       this.logger.error('Error generating drive file URLs:', error);
       return [];
     }
+  }
+
+  /**
+   * Upload a file from internal storage to the external image hosting service.
+   * Returns the public URL on success, null on failure.
+   */
+  private async uploadFileToImageHost(
+    storageKey: string,
+    file: DriveFile | { fileId: string; name: string; type?: string },
+    baseUrl: string,
+    token: string,
+  ): Promise<string | null> {
+    const readable = await this.internalOss.getObject(storageKey);
+    const fileBuffer = await streamToBuffer(readable);
+
+    const contentType = ('type' in file ? file.type : undefined) ?? 'application/octet-stream';
+    const ext = mime.getExtension(contentType) ?? 'bin';
+    const filename = `${file.fileId}.${ext}`;
+
+    const boundary = `----ReflyUpload${Date.now()}`;
+    const CRLF = '\r\n';
+    const header = [
+      `--${boundary}`,
+      `Content-Disposition: form-data; name="file"; filename="${filename}"`,
+      `Content-Type: ${contentType}`,
+      '',
+      '',
+    ].join(CRLF);
+    const footer = `${CRLF}--${boundary}--${CRLF}`;
+    const body = Buffer.concat([Buffer.from(header), fileBuffer, Buffer.from(footer)]);
+
+    const response = await axios.post(`${baseUrl}/api/v3/upload`, body, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': `multipart/form-data; boundary=${boundary}`,
+      },
+      timeout: 30000,
+      maxBodyLength: Number.POSITIVE_INFINITY,
+    });
+
+    const respData = response.data;
+    if (respData?.code !== 200 || !respData?.data?.url) {
+      this.logger.warn(`Image host error: ${respData?.msg ?? 'unknown'}`);
+      return null;
+    }
+
+    this.logger.info(`File ${file.fileId} uploaded to image host: ${respData.data.url}`);
+    return respData.data.url;
   }
 
   /**

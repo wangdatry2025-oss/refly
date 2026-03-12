@@ -431,10 +431,13 @@ export class HttpAdapter extends BaseAdapter implements IHttpAdapter {
       this.logger.log(`Polling ${attempt}/${maxAttempts}: ${statusUrl}`);
 
       // Build headers for polling (reuse default/request headers + auth)
+      // Remove Content-Type for GET requests as some APIs (e.g., Fal.ai) reject it with 405
       const pollHeaders = {
         ...this.httpClient.getHeaders(),
         ...request.headers,
       };
+      pollHeaders['Content-Type'] = undefined;
+      pollHeaders['content-type'] = undefined;
       if (request.credentials) {
         this.addAuthHeaders(pollHeaders, request.credentials);
       }
@@ -524,10 +527,13 @@ export class HttpAdapter extends BaseAdapter implements IHttpAdapter {
       this.logger.log(`Fetching result from response_url: ${responseUrl}`);
 
       // Build headers (reuse default/request headers + auth)
+      // Remove Content-Type for GET requests as some APIs reject it
       const headers = {
         ...this.httpClient.getHeaders(),
         ...request.headers,
       };
+      headers['Content-Type'] = undefined;
+      headers['content-type'] = undefined;
       if (request.credentials) {
         this.addAuthHeaders(headers, request.credentials);
       }

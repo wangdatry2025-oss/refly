@@ -285,6 +285,10 @@ export default () => ({
     highLoadThreshold: Number.parseInt(process.env.SCHEDULE_HIGH_LOAD_THRESHOLD) || 5,
     maxPriority: Number.parseInt(process.env.SCHEDULE_MAX_PRIORITY) || 10,
   },
+  imageHost: {
+    baseUrl: process.env.IMAGE_HOST_BASE_URL,
+    token: process.env.IMAGE_HOST_TOKEN,
+  },
   audio: {
     fish: {
       apiKey: process.env.FISH_AUDIO_API_KEY,
